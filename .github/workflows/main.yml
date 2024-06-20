@@ -1,4 +1,4 @@
-name: Generate Client SDKs
+name: Generate Client SDK
 
 on:
   workflow_dispatch:
@@ -12,40 +12,10 @@ permissions:
   contents: write
 
 jobs:
-  # delete stale branches before running
-  prerun-cleanup:
+  # fetch swagger, generate sdk for resources api, and push on master
+  generate-sdk:
     runs-on: ubuntu-latest
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-      with:
-        ref: master
-    - name: Delete temporary branch
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git fetch --all
-        git branch -r
-        for api in resources descriptors; do
-          TEMP_BRANCH="temp-branch-${api}"
-          git push origin --delete $TEMP_BRANCH || true
-          git branch -d $TEMP_BRANCH || true
-        done
-        git branch -D merge-temp || true
-  # generate sdks for resources and descriptors and push each on a temp branch
-  generate-sdks:
-    runs-on: ubuntu-latest
-    needs: prerun-cleanup
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: resources
-            url: "https://api.ed-fi.org/${{ github.event.inputs.version }}/api/metadata/data/v3/resources/swagger.json"
-            output: client/resources
-          - name: descriptors
-            url: "https://api.ed-fi.org/${{ github.event.inputs.version }}/api/metadata/data/v3/descriptors/swagger.json"
-            output: client/descriptors
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -55,66 +25,26 @@ jobs:
         wget https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/5.3.1/openapi-generator-cli-5.3.1.jar -O openapi-generator-cli.jar
         alias openapi-generator-cli='java -jar $PWD/openapi-generator-cli.jar'
 
-    - name: Fetch Swagger JSON for ${{ matrix.name }}
+    - name: Fetch Swagger JSON for resources
       run: |
         set -e
-        curl -f -o swagger-${{ matrix.name }}.json ${{ matrix.url }}
+        curl -f -o swagger-resources.json "https://api.ed-fi.org/${{ github.event.inputs.version }}/api/metadata/data/v3/resources/swagger.json"
 
-    - name: Generate PHP client SDK for ${{ matrix.name }}
+    - name: Generate PHP client SDK for resources
       run: |
-        java -jar openapi-generator-cli.jar generate -i swagger-${{ matrix.name }}.json -g php -o ${{ matrix.output }} > /dev/null 2>&1
+        java -jar openapi-generator-cli.jar generate -i swagger-resources.json -g php -o . > /dev/null 2>&1
 
     - name: Install jq
       run: sudo apt-get install -y jq
 
-    - name: Update composer.json
+    - name: Update name and version
       run: |
-          jq --arg name "edfi/${{ matrix.name }}" --arg version "${{ github.event.inputs.version }}" '.name = $name | .version = $version' ${{ matrix.output }}/composer.json > tmp.$$.json && mv tmp.$$.json ${{ matrix.output }}/composer.json
+          jq --arg name "edfi/resources" --arg version "${{ github.event.inputs.version }}" '.name = $name | .version = $version' composer.json > tmp.$$.json && mv tmp.$$.json composer.json
 
-    - name: Commit and push to temporary branch
+    - name: Commit and push
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        TEMP_BRANCH="temp-branch-${{ matrix.name }}"
-        git checkout -b $TEMP_BRANCH
-        git add client || echo "nothing to add" || echo "nothing to add"
-        git commit -m "build: generated client SDKs for ${{ matrix.name }} ${{ github.event.inputs.version }}" || echo "nothing to commit"
-        git push origin $TEMP_BRANCH || echo "nothing to push"
-  # merge the temp branches on master branch and clean
-  merge-and-clean:
-    runs-on: ubuntu-latest
-    needs: generate-sdks
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-      with:
-        ref: master
-
-    - name: Fetch all branches
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git fetch --all
-        git branch -r
-
-    - name: Merge changes from temporary branches with squash
-      run: |
-        git checkout -b merge-temp
-        for api in resources descriptors; do
-          TEMP_BRANCH="temp-branch-${api}"
-          git merge --squash origin/$TEMP_BRANCH --allow-unrelated-histories
-          git commit --no-edit || echo "nothing to commit"
-        done
-        git checkout master
-        git merge merge-temp --no-ff -m "build: merge of generated client SDKs ${{ github.event.inputs.version }}" || echo "nothing to merge"
-        git push origin master
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Delete temporary branch
-      run: |
-        for api in resources descriptors; do
-          TEMP_BRANCH="temp-branch-${api}"
-          git push origin --delete $TEMP_BRANCH
-        done
-        git branch -D merge-temp
+        git add . || echo "nothing to add" || echo "nothing to add"
+        git commit -m "build: generated resources client SDK ${{ github.event.inputs.version }}" || echo "nothing to commit"
+        git push origin master || echo "nothing to push"
