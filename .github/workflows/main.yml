@@ -64,6 +64,13 @@ jobs:
       run: |
         java -jar openapi-generator-cli.jar generate -i swagger-${{ matrix.name }}.json -g php -o ${{ matrix.output }} > /dev/null 2>&1
 
+    - name: Install jq
+      run: sudo apt-get install -y jq
+
+    - name: Update composer.json
+      run: |
+          jq --arg name "edfi/${{ matrix.name }}" --arg version "${{ github.event.inputs.version }}" '.name = $name | .version = $version' ${{ matrix.output }}/composer.json > tmp.$$.json && mv tmp.$$.json ${{ matrix.output }}/composer.json
+
     - name: Commit and push to temporary branch
       run: |
         git config --global user.name 'github-actions[bot]'
