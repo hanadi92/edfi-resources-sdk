@@ -48,3 +48,5 @@ jobs:
         git add . || echo "nothing to add" || echo "nothing to add"
         git commit -m "build: generated resources client SDK ${{ github.event.inputs.version }}" || echo "nothing to commit"
         git push origin master || echo "nothing to push"
+        git tag ${{ github.event.inputs.version }}
+        git push origin ${{ github.event.inputs.version }}
