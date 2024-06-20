@@ -1,0 +1,51 @@
+name: Generate Client SDKs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to use'
+        required: true
+        default: 'v7.1'
+env:
+  SWAGGER_RESOURCES_URL: https://api.ed-fi.org/${{ github.event.inputs.version }}/api/metadata/data/v3/resources/swagger.json
+  SWAGGER_DESCRIPTORS_URL: https://api.ed-fi.org/${{ github.event.inputs.version }}/api/metadata/data/v3/descriptors/swagger.json
+
+jobs:
+  generate-sdks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        api:
+          name: [resources, descriptors]
+          url: [ '${{ env.SWAGGER_RESOURCES_URL }}', '${{ env.SWAGGER_DESCRIPTORS_URL }}' ]
+          output: ["client/resources", "client/descriptors"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up OpenAPI Generator
+      uses: openapitools/openapi-generator-cli@v2.1.8
+      id: openapi-generator-cli
+      with:
+        version: '5.3.1'
+
+    - name: Fetch Swagger JSON for ${{ matrix.api.name }}
+      run: |
+        set -e
+        curl -f -o swagger-${{ matrix.api.name }}.json ${{ matrix.api.url }}
+
+    - name: Generate PHP client SDK for ${{ matrix.api.name }}
+      run: |
+        openapi-generator-cli generate -i swagger-${{ matrix.api.name }}.json -g php -o ${{ matrix.api.output }}
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add client
+        git commit -m "Generated PHP client SDKs from Swagger"
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
